@@ -4,9 +4,8 @@
 #include <iostream>
 #include <list>
 #include <string>
-
-#include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/ini_parser.hpp>
+#include <map>
+#include <sstream>
 
 /**
  * Base class for configuration options.
@@ -31,13 +30,30 @@ public:
     const std::string& getPath() const;
 
     /**
-     * Initialize the configuration option from the parsed property tree.
+     * Initialize the configuration option from the parsed settings map.
      */
-    virtual void initializeValue(const boost::property_tree::ptree& propertyTree)=0;
+    virtual void initializeValue(const std::map<std::string, std::string>& settings)=0;
 
 private:
     std::string path;
 };
+
+// Helper for type conversion
+template<typename T>
+inline void convertConfigValue(const std::string& s, T& v) {
+    std::stringstream ss(s);
+    ss >> v;
+}
+
+template<>
+inline void convertConfigValue<bool>(const std::string& s, bool& v) {
+    v = (s == "true" || s == "1" || s == "yes");
+}
+
+template<>
+inline void convertConfigValue<std::string>(const std::string& s, std::string& v) {
+    v = s;
+}
 
 /**
  * Basic configuration option template for values that have simple types and only a default value.
@@ -68,10 +84,14 @@ public:
     /**
      * Initialize the configuration option.
      */
-    void initializeValue(const boost::property_tree::ptree& propertyTree) override
+    void initializeValue(const std::map<std::string, std::string>& settings) override
     {
-        value = propertyTree.get<T>(getPath(), value);
-        std::cout << "Configuration option \"" << getPath() << "\" set to \"" << value << "\"" << std::endl;
+        auto it = settings.find(getPath());
+        if (it != settings.end())
+        {
+            convertConfigValue<T>(it->second, value);
+            std::cout << "Configuration option \"" << getPath() << "\" set to \"" << value << "\"" << std::endl;
+        }
     }
 
 private:

@@ -17,16 +17,19 @@ static SDL_Texture* texture;
 static SDL_Texture* scanlineTexture;
 static SMBEngine* smbEngine = nullptr;
 static uint32_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
+static SDL_GameController* controller = nullptr;
 
 /**
  * Load the Super Mario Bros. ROM image.
  */
 static bool loadRomImage()
 {
-    FILE* file = fopen(Configuration::getRomFileName().c_str(), "r");
+    const std::string& romPath = Configuration::getRomFileName();
+    FILE* file = fopen(romPath.c_str(), "rb");
     if (file == NULL)
     {
-        std::cout << "Failed to open the file \"" << Configuration::getRomFileName() << "\". Exiting.\n";
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ROM Error", 
+            "Could not find game.nes at ux0:data/SMB/game.nes\n\nExpected ROM: Super Mario Bros. (JU) (PRG0) [!].nes", window);
         return false;
     }
 
@@ -59,8 +62,14 @@ static void audioCallback(void* userdata, uint8_t* buffer, int len)
  */
 static bool initialize()
 {
+    // Initialize SDL first to use message box if needed
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0)
+    {
+        std::cout << "SDL_Init() failed: " << SDL_GetError() << std::endl;
+        return false;
+    }
+
     // Load the configuration
-    //
     Configuration::initialize(CONFIG_FILE_NAME);
 
     // Load the SMB ROM image
@@ -69,44 +78,27 @@ static bool initialize()
         return false;
     }
 
-    // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
-    {
-        std::cout << "SDL_Init() failed during initialize(): " << SDL_GetError() << std::endl;
-        return false;
-    }
-
-    // Create the window
+    // Create the window (Vita fixed resolution)
     window = SDL_CreateWindow(APP_TITLE,
                               SDL_WINDOWPOS_UNDEFINED,
                               SDL_WINDOWPOS_UNDEFINED,
-                              RENDER_WIDTH * Configuration::getRenderScale(),
-                              RENDER_HEIGHT * Configuration::getRenderScale(),
+                              960, 544,
                               0);
     if (window == nullptr)
     {
-        std::cout << "SDL_CreateWindow() failed during initialize(): " << SDL_GetError() << std::endl;
         return false;
     }
 
-    // Setup the renderer and texture buffer
-    renderer = SDL_CreateRenderer(window, -1, (Configuration::getVsyncEnabled() ? SDL_RENDERER_PRESENTVSYNC : 0) | SDL_RENDERER_ACCELERATED);
+    // Setup the renderer
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
     if (renderer == nullptr)
     {
-        std::cout << "SDL_CreateRenderer() failed during initialize(): " << SDL_GetError() << std::endl;
-        return false;
-    }
-
-    if (SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH, RENDER_HEIGHT) < 0)
-    {
-        std::cout << "SDL_RenderSetLogicalSize() failed during initialize(): " << SDL_GetError() << std::endl;
         return false;
     }
 
     texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, RENDER_WIDTH, RENDER_HEIGHT);
     if (texture == nullptr)
     {
-        std::cout << "SDL_CreateTexture() failed during initialize(): " << SDL_GetError() << std::endl;
         return false;
     }
 
@@ -116,7 +108,6 @@ static bool initialize()
     }
 
     // Set up custom palette, if configured
-    //
     if (!Configuration::getPaletteFileName().empty())
     {
         const uint32_t* palette = loadPalette(Configuration::getPaletteFileName());
@@ -128,20 +119,29 @@ static bool initialize()
 
     if (Configuration::getAudioEnabled())
     {
-        // Initialize audio
         SDL_AudioSpec desiredSpec;
         desiredSpec.freq = Configuration::getAudioFrequency();
-        desiredSpec.format = AUDIO_S8;
+        desiredSpec.format = AUDIO_S16SYS;
         desiredSpec.channels = 1;
-        desiredSpec.samples = 2048;
+        desiredSpec.samples = 4096; // ~100ms buffer
         desiredSpec.callback = audioCallback;
         desiredSpec.userdata = NULL;
 
         SDL_AudioSpec obtainedSpec;
-        SDL_OpenAudio(&desiredSpec, &obtainedSpec);
-
-        // Start playing audio
+        if (SDL_OpenAudio(&desiredSpec, &obtainedSpec) < 0) {
+             std::cout << "SDL_OpenAudio failed: " << SDL_GetError() << std::endl;
+        }
         SDL_PauseAudio(0);
+    }
+
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
+
+    // Open first available controller
+    for (int i = 0; i < SDL_NumJoysticks(); ++i) {
+        if (SDL_IsGameController(i)) {
+            controller = SDL_GameControllerOpen(i);
+            if (controller) break;
+        }
     }
 
     return true;
@@ -152,12 +152,15 @@ static bool initialize()
  */
 static void shutdown()
 {
+    if (controller) SDL_GameControllerClose(controller);
     SDL_CloseAudio();
 
-    SDL_DestroyTexture(scanlineTexture);
+    if (scanlineTexture) SDL_DestroyTexture(scanlineTexture);
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+
+    delete[] romImage;
 
     SDL_Quit();
 }
@@ -169,57 +172,49 @@ static void mainLoop()
     engine.reset();
 
     bool running = true;
-    int progStartTime = SDL_GetTicks();
-    int frame = 0;
     while (running)
     {
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
-            switch (event.type)
-            {
-            case SDL_QUIT:
-                running = false;
-                break;
-            case SDL_WINDOWEVENT:
-                switch (event.window.event)
-                {
-                case SDL_WINDOWEVENT_CLOSE:
-                    running = false;
-                    break;
-                }
-                break;
-
-            default:
-                break;
-            }
+            if (event.type == SDL_QUIT) running = false;
         }
 
-        const Uint8* keys = SDL_GetKeyboardState(NULL);
         Controller& controller1 = engine.getController1();
-        controller1.setButtonState(BUTTON_A, keys[SDL_SCANCODE_X]);
-        controller1.setButtonState(BUTTON_B, keys[SDL_SCANCODE_Z]);
-        controller1.setButtonState(BUTTON_SELECT, keys[SDL_SCANCODE_BACKSPACE]);
-        controller1.setButtonState(BUTTON_START, keys[SDL_SCANCODE_RETURN]);
-        controller1.setButtonState(BUTTON_UP, keys[SDL_SCANCODE_UP]);
-        controller1.setButtonState(BUTTON_DOWN, keys[SDL_SCANCODE_DOWN]);
-        controller1.setButtonState(BUTTON_LEFT, keys[SDL_SCANCODE_LEFT]);
-        controller1.setButtonState(BUTTON_RIGHT, keys[SDL_SCANCODE_RIGHT]);
+        
+        if (controller) {
+            bool jump = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_A) || // Vita Cross
+                        SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_B) || // Vita Circle
+                        SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
+            bool run  = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_X) || // Vita Square
+                        SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+            
+            controller1.setButtonState(BUTTON_A, jump);
+            controller1.setButtonState(BUTTON_B, run);
+            controller1.setButtonState(BUTTON_SELECT, SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_BACK));
+            controller1.setButtonState(BUTTON_START, SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_START));
 
-        if (keys[SDL_SCANCODE_R])
-        {
-            // Reset
-            engine.reset();
+            const int threshold = 16384;
+            int16_t axisX = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
+            int16_t axisY = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
+            
+            controller1.setButtonState(BUTTON_UP, SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_UP) || (axisY < -threshold));
+            controller1.setButtonState(BUTTON_DOWN, SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_DOWN) || (axisY > threshold));
+            controller1.setButtonState(BUTTON_LEFT, SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_LEFT) || (axisX < -threshold));
+            controller1.setButtonState(BUTTON_RIGHT, SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_RIGHT) || (axisX > threshold));
         }
-        if (keys[SDL_SCANCODE_ESCAPE])
-        {
-            // quit
-            running = false;
-            break;
-        }
-        if (keys[SDL_SCANCODE_F])
-        {
-            SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+ else {
+            // Fallback to keyboard
+            const Uint8* keys = SDL_GetKeyboardState(NULL);
+            controller1.setButtonState(BUTTON_A, keys[SDL_SCANCODE_X]);
+            controller1.setButtonState(BUTTON_B, keys[SDL_SCANCODE_Z]);
+            controller1.setButtonState(BUTTON_SELECT, keys[SDL_SCANCODE_BACKSPACE]);
+            controller1.setButtonState(BUTTON_START, keys[SDL_SCANCODE_RETURN]);
+            controller1.setButtonState(BUTTON_UP, keys[SDL_SCANCODE_UP]);
+            controller1.setButtonState(BUTTON_DOWN, keys[SDL_SCANCODE_DOWN]);
+            controller1.setButtonState(BUTTON_LEFT, keys[SDL_SCANCODE_LEFT]);
+            controller1.setButtonState(BUTTON_RIGHT, keys[SDL_SCANCODE_RIGHT]);
+            if (keys[SDL_SCANCODE_ESCAPE]) running = false;
         }
 
         engine.update();
@@ -229,36 +224,16 @@ static void mainLoop()
 
         SDL_RenderClear(renderer);
 
-        // Render the screen
-        SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH, RENDER_HEIGHT);
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
+        // 4:3 Pillarbox: 960x544 screen. 4:3 area is 725x544 centered.
+        SDL_Rect dest = { 117, 0, 725, 544 };
+        SDL_RenderCopy(renderer, texture, NULL, &dest);
 
-        // Render scanlines
-        //
-        if (Configuration::getScanlinesEnabled())
+        if (Configuration::getScanlinesEnabled() && scanlineTexture)
         {
-            SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH * 3, RENDER_HEIGHT * 3);
-            SDL_RenderCopy(renderer, scanlineTexture, NULL, NULL);
+            SDL_RenderCopy(renderer, scanlineTexture, NULL, &dest);
         }
 
         SDL_RenderPresent(renderer);
-
-        /**
-         * Ensure that the framerate stays as close to the desired FPS as possible. If the frame was rendered faster, then delay. 
-         * If the frame was slower, reset time so that the game doesn't try to "catch up", going super-speed.
-         */
-        int now = SDL_GetTicks();
-        int delay = progStartTime + int(double(frame) * double(MS_PER_SEC) / double(Configuration::getFrameRate())) - now;
-        if(delay > 0) 
-        {
-            SDL_Delay(delay);
-        }
-        else 
-        {
-            frame = 0;
-            progStartTime = now;
-        }
-        frame++;
     }
 }
 
@@ -266,12 +241,10 @@ int main(int argc, char** argv)
 {
     if (!initialize())
     {
-        std::cout << "Failed to initialize. Please check previous error messages for more information. The program will now exit.\n";
         return -1;
     }
 
     mainLoop();
-
     shutdown();
 
     return 0;

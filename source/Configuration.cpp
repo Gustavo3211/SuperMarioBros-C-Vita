@@ -1,4 +1,6 @@
 #include <fstream>
+#include <algorithm>
+#include <cctype>
 
 #include "Configuration.hpp"
 
@@ -48,21 +50,21 @@ BasicConfigurationOption<std::string> Configuration::paletteFileName(
  * Scaling factor for rendering.
  */
 BasicConfigurationOption<int> Configuration::renderScale(
-    "video.scale", 3
+    "video.scale", 2
 );
 
 /**
  * Filename for the SMB ROM image.
  */
 BasicConfigurationOption<std::string> Configuration::romFileName(
-    "game.rom_file", "Super Mario Bros. (JU) (PRG0) [!].nes"
+    "game.rom_file", "ux0:data/SMB/game.nes"
 );
 
 /**
  * Whether scanlines are enabled or not.
  */
 BasicConfigurationOption<bool> Configuration::scanlinesEnabled(
-    "video.scanlines", true
+    "video.scanlines", false
 );
 
 /**
@@ -83,25 +85,43 @@ const std::string& ConfigurationOption::getPath() const
     return path;
 }
 
+static inline std::string trim(std::string s) {
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }));
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }).base(), s.end());
+    return s;
+}
+
 void Configuration::initialize(const std::string& fileName)
 {
-    // Check that the configuration file exists.
-    // If it does not exist, we will fall back to default values.
-    //
     std::ifstream configFile(fileName.c_str());
 
     if (configFile.good())
     {
-        // Load the configuration file into a property tree to parse it
-        //
-        boost::property_tree::ptree propertyTree;
-        boost::property_tree::ini_parser::read_ini(configFile, propertyTree);
+        std::map<std::string, std::string> settings;
+        std::string line, section;
+        while (std::getline(configFile, line))
+        {
+            line = trim(line);
+            if (line.empty() || line[0] == ';' || line[0] == '#') continue;
+            if (line[0] == '[' && line.back() == ']') {
+                section = line.substr(1, line.size() - 2);
+            } else {
+                size_t pos = line.find('=');
+                if (pos != std::string::npos) {
+                    std::string key = trim(line.substr(0, pos));
+                    std::string value = trim(line.substr(pos + 1));
+                    settings[section + "." + key] = value;
+                }
+            }
+        }
 
-        // Try to load the value for all known config options
-        //
         for (auto option : configurationOptions)
         {
-            option->initializeValue(propertyTree);
+            option->initializeValue(settings);
         }
     }
 }

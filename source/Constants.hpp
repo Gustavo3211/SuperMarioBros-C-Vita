@@ -13,7 +13,7 @@
 /**
  * Configuration file name.
  */
-#define CONFIG_FILE_NAME "smbc.conf"
+#define CONFIG_FILE_NAME "ux0:data/SMB/smbc.conf"
 
 /**
  * Width of the virtual screen.

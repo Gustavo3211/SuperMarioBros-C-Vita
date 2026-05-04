@@ -504,34 +504,50 @@ APU::~APU()
     delete noise;
 }
 
-uint8_t APU::getOutput()
+float APU::getOutput()
 {
-    double pulseOut = 0.00752 * (pulse1->output() + pulse2->output());
-    double tndOut = 0.00851 * triangle->output() + 0.00494 * noise->output();
+    float p1 = pulse1->output();
+    float p2 = pulse2->output();
+    float pulseOut = 0.0f;
+    if (p1 + p2 > 0) {
+        pulseOut = 95.88f / ((8128.0f / (p1 + p2)) + 100.0f);
+    }
 
-    return static_cast<uint8_t>(floor(255.0 * (pulseOut + tndOut)));
+    float t = triangle->output();
+    float n = noise->output();
+    float tndOut = 0.0f;
+    if (t / 8227.0f + n / 12241.0f > 0) {
+        tndOut = 159.79f / ((1.0f / (t / 8227.0f + n / 12241.0f)) + 100.0f);
+    }
+
+    return pulseOut + tndOut;
 }
 
 void APU::output(uint8_t* buffer, int len)
 {
-    len = (len > audioBufferLength) ? audioBufferLength : len;
-    memcpy(buffer, audioBuffer, len);
-    if (len > audioBufferLength)
+    int samplesReq = len / 2;
+    int16_t* out = (int16_t*)buffer;
+    int toCopy = (samplesReq > audioBufferLength) ? audioBufferLength : samplesReq;
+    
+    if (toCopy > 0)
     {
-        memcpy(buffer, audioBuffer, audioBufferLength);
-        audioBufferLength = 0;
+        memcpy(out, audioBuffer, toCopy * 2);
+        audioBufferLength -= toCopy;
+        if (audioBufferLength > 0)
+        {
+            memmove(audioBuffer, audioBuffer + toCopy, audioBufferLength * 2);
+        }
     }
-    else
+
+    if (samplesReq > toCopy)
     {
-        memcpy(buffer, audioBuffer, len);
-        audioBufferLength -= len;
-        memcpy(audioBuffer, audioBuffer + len, audioBufferLength);
+        memset(out + toCopy, 0, (samplesReq - toCopy) * 2);
     }
 }
 
 void APU::stepFrame()
 {
-    // Step the frame counter 4 times per frame, for 240Hz
+    SDL_LockAudio();
     for (int i = 0; i < 4; i++)
     {
         frameValue = (frameValue + 1) % 5;
@@ -549,33 +565,30 @@ void APU::stepFrame()
             break;
         }
 
-        // Calculate the number of samples needed per 1/4 frame
-        //
         int frequency = Configuration::getAudioFrequency();
-
-        // Example: we need 735 samples per frame for 44.1KHz sound sampling
-        //
         int samplesToWrite = frequency / (Configuration::getFrameRate() * 4);
         if (i == 3)
         {
-            // Handle the remainder on the final tick of the frame counter
-            //
             samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
         }
         
-        SDL_LockAudio();
-
-        // Step the timer ~3729 times per quarter frame for most channels
-        //
         int j = 0;
+        float apuSampleAcc = 0;
+        int apuSampleCount = 0;
         for (int stepIndex = 0; stepIndex < 3729; stepIndex++)
         {
+            apuSampleAcc += getOutput();
+            apuSampleCount++;
+
             if (j < samplesToWrite &&
                 (stepIndex / 3729.0) > (j / (double)samplesToWrite))
             {
-                uint8_t sample = getOutput();
+                float avg = apuSampleAcc / apuSampleCount;
+                int16_t sample = static_cast<int16_t>((avg - 0.2f) * 30000.0f);
                 audioBuffer[audioBufferLength + j] = sample;
                 j++;
+                apuSampleAcc = 0;
+                apuSampleCount = 0;
             }
 
             pulse1->stepTimer();
@@ -585,9 +598,8 @@ void APU::stepFrame()
             triangle->stepTimer();
         }
         audioBufferLength += samplesToWrite;
-        
-        SDL_UnlockAudio();
     }
+    SDL_UnlockAudio();
 }
 
 void APU::stepEnvelope()

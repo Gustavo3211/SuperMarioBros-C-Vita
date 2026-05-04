@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-#define AUDIO_BUFFER_LENGTH 4096
+#define AUDIO_BUFFER_LENGTH 16384
 
 class Pulse;
 class Triangle;
@@ -28,7 +28,7 @@ public:
     void writeRegister(uint16_t address, uint8_t value);
 
 private:
-    uint8_t audioBuffer[AUDIO_BUFFER_LENGTH];
+    int16_t audioBuffer[AUDIO_BUFFER_LENGTH];
     int audioBufferLength;
 
     int frameValue; /**< The value of the frame counter. */
@@ -38,7 +38,7 @@ private:
     Triangle* triangle;
     Noise* noise;
 
-    uint8_t getOutput();
+    float getOutput();
     void stepEnvelope();
     void stepSweep();
     void stepLength();
