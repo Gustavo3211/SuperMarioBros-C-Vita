@@ -7,9 +7,43 @@ I've taken the `smbdis.asm` disassembly of Super Mario Bros. and successfully co
 
 Many thanks to doppelganger (doppelheathen@gmail.com), who wrote the original comprehensive Super Mario Bros. disassembly. This can be found in the `docs/` folder of the repo.
 
-![Demo gif](https://github.com/MitchellSternke/SuperMarioBros-C/raw/master/demo.gif)
+![Demo](https://github.com/MitchellSternke/SuperMarioBros-C/raw/master/VITA3K.png)
 
-*looks and plays just like the original*
+*looks and plays just like the original (super low peformance in PSVITA but runs fine on VIta3k and i reaally dont know why!!!! :D)*
+
+# Super Mario Bros. C (PS Vita Port)
+
+This is a port of the Super Mario Bros. C implementation to the PlayStation Vita.
+
+## Building for PS Vita
+
+Ensure you have the [vitaSDK](https://vitasdk.org/) installed and the `VITASDK` environment variable set.
+
+```bash
+mkdir build && cd build
+cmake -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.cmake -DCMAKE_PREFIX_PATH=$VITASDK/arm-vita-eabi ..
+make
+```
+
+The resulting `smbc.vpk` will be in the `build` directory.
+
+## Installation
+
+1. Install the `smbc.vpk` on your PS Vita using VitaShell.
+2. Place your `game.nes` ROM at `ux0:data/SMB/game.nes`.
+   - **Expected ROM:** `Super Mario Bros. (JU) (PRG0) [!].nes`
+
+## Controls
+
+- **D-Pad / Left Analog:** Move
+- **Cross / Circle / L:** Jump
+- **Square / R:** Run
+- **Start:** Start
+- **Select:** Select
+- Default: ""
+
+
+
 
 Building
 --------
