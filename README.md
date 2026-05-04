@@ -7,7 +7,7 @@ I've taken the `smbdis.asm` disassembly of Super Mario Bros. and successfully co
 
 Many thanks to doppelganger (doppelheathen@gmail.com), who wrote the original comprehensive Super Mario Bros. disassembly. This can be found in the `docs/` folder of the repo.
 
-![Demo](https://github.com/MitchellSternke/SuperMarioBros-C/raw/master/VITA3K.png)
+![Demo](https://github.com/Gustavo3211/SuperMarioBros-C-Vita/blob/master/VITA3K.png)
 
 *looks and plays just like the original (super low peformance in PSVITA but runs fine on VIta3k and i reaally dont know why!!!! :D)*
 
