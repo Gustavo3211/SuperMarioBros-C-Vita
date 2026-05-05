@@ -21,7 +21,7 @@ Ensure you have the [vitaSDK](https://vitasdk.org/) installed and the `VITASDK` 
 
 ```bash
 mkdir build && cd build
-cmake -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.cmake -DCMAKE_PREFIX_PATH=$VITASDK/arm-vita-eabi ..
+cmake -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake -DCMAKE_PREFIX_PATH=$VITASDK/arm-vita-eabi ..
 make
 ```
 
