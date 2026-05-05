@@ -28,8 +28,16 @@ target_link_libraries(smbc ${SDL2_LIBRARIES} ScePower_stub SceLibKernel_stub)
 if(DEFINED ENV{VITASDK})
     include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
     vita_create_self(smbc.self smbc)
+    set(LIVEAREA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vpkImage)
+
     vita_create_vpk(smbc.vpk "SMBV00001" smbc.self
         NAME "Super Mario Bros. C"
         VERSION "01.00"
+
+        FILE
+            ${LIVEAREA_DIR}/bg0.png sce_sys/livearea/contents/bg0.png
+            ${LIVEAREA_DIR}/startup.png sce_sys/livearea/contents/startup.png
+            ${LIVEAREA_DIR}/icon0.png sce_sys/icon0.png
+            ${LIVEAREA_DIR}/template.xml sce_sys/livearea/contents/template.xml
     )
 endif()
