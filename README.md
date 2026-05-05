@@ -9,7 +9,7 @@ Many thanks to doppelganger (doppelheathen@gmail.com), who wrote the original co
 
 ![Demo](https://github.com/Gustavo3211/SuperMarioBros-C-Vita/blob/master/VITA3K.png)
 
-# Runs smoothly on PS Vita thanks to decoupled APU rendering. Audio is currently experimental and disabled by default to maintain peak performance.*
+# Runs smoothly on PS Vita BUT Audio is currently experimental and disabled by default to maintain good performance.*
 
 # Super Mario Bros. C (PS Vita Port)
 
