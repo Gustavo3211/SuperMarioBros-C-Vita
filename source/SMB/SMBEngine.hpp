@@ -62,6 +62,11 @@ public:
      */
     void update();
 
+    void setAudioEnabled(bool enabled);
+    bool isAudioEnabled() const;
+    void setRenderMode(int mode);
+    int getRenderMode() const;
+
 private:
     // NES Emulation subsystems:
     APU* apu;
@@ -84,7 +89,7 @@ private:
     uint8_t dataStorage[0x8000]; /**< 32kb of storage for constant data. */
     uint8_t ram[0x800];          /**< 2kb of RAM. */
     uint8_t* chr;                /**< Pointer to CHR data from the ROM. */
-    int returnIndexStack[100];   /**< Stack for managing JSR subroutines. */
+    int returnIndexStack[1024];  /**< Stack for managing JSR subroutines. */
     int returnIndexStackTop;     /**< Current index of the top of the call stack. */
 
     // Pointers to constant data used in the decompiled code

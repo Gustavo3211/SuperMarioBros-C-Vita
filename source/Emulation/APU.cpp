@@ -8,701 +8,618 @@
 #include "APU.hpp"
 
 static const uint8_t lengthTable[] = {
-    10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14,
-    12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30
-};
+    10, 254, 20, 2,  40, 4,  80, 6,  160, 8,  60, 10, 14, 12, 26, 14,
+    12, 16,  24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30};
 
-static const uint8_t dutyTable[][8] = {
-    {0, 1, 0, 0, 0, 0, 0, 0},
-    {0, 1, 1, 0, 0, 0, 0, 0},
-    {0, 1, 1, 1, 1, 0, 0, 0},
-    {1, 0, 0, 1, 1, 1, 1, 1}
-};
+static const uint8_t dutyTable[][8] = {{0, 1, 0, 0, 0, 0, 0, 0},
+                                       {0, 1, 1, 0, 0, 0, 0, 0},
+                                       {0, 1, 1, 1, 1, 0, 0, 0},
+                                       {1, 0, 0, 1, 1, 1, 1, 1}};
 
 static const uint8_t triangleTable[] = {
-    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
-};
+    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5,  4,  3,  2,  1,  0,
+    0,  1,  2,  3,  4,  5,  6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
 
 static const uint16_t noiseTable[] = {
-    4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068
-};
+    4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068};
 
 /**
  * Pulse waveform generator.
  */
-class Pulse
-{
-    friend class APU;
+class Pulse {
+  friend class APU;
+
 public:
-    Pulse(uint8_t channel)
-    {
-        enabled = false;
-        this->channel = channel;
-        lengthEnabled = false;
-        lengthValue = 0;
-        timerPeriod = 0;
-        timerValue = 0;
-        dutyMode = 0;
-        dutyValue = 0;
-        sweepReload = false;
-        sweepEnabled = false;
-        sweepNegate = false;
-        sweepShift = 0;
-        sweepPeriod = 0;
-        sweepValue = 0;
-        envelopeEnabled = false;
-        envelopeLoop = false;
-        envelopeStart = false;
-        envelopePeriod = 0;
-        envelopeValue = 0;
-        envelopeVolume = 0;
-        constantVolume = 0;
-    }
+  Pulse(uint8_t channel) {
+    enabled = false;
+    this->channel = channel;
+    lengthEnabled = false;
+    lengthValue = 0;
+    timerPeriod = 0;
+    timerValue = 0;
+    dutyMode = 0;
+    dutyValue = 0;
+    sweepReload = false;
+    sweepEnabled = false;
+    sweepNegate = false;
+    sweepShift = 0;
+    sweepPeriod = 0;
+    sweepValue = 0;
+    envelopeEnabled = false;
+    envelopeLoop = false;
+    envelopeStart = false;
+    envelopePeriod = 0;
+    envelopeValue = 0;
+    envelopeVolume = 0;
+    constantVolume = 0;
+  }
 
-    void writeControl(uint8_t value)
-    {
-        dutyMode = (value >> 6) & 3;
-        lengthEnabled = ((value >> 5) & 1) == 0;
-        envelopeLoop = ((value >> 5) & 1) == 1;
-        envelopeEnabled = ((value >> 4) & 1) == 0;
-        envelopePeriod = value & 15;
-        constantVolume = value & 15;
-        envelopeStart = true;
-    }
+  void writeControl(uint8_t value) {
+    dutyMode = (value >> 6) & 3;
+    lengthEnabled = ((value >> 5) & 1) == 0;
+    envelopeLoop = ((value >> 5) & 1) == 1;
+    envelopeEnabled = ((value >> 4) & 1) == 0;
+    envelopePeriod = value & 15;
+    constantVolume = value & 15;
+    envelopeStart = true;
+  }
 
-    void writeSweep(uint8_t value)
-    {
-        sweepEnabled = ((value >> 7) & 1) == 1;
-        sweepPeriod = ((value >> 4) & 7) + 1;
-        sweepNegate = ((value >> 3) & 1) == 1;
-        sweepShift = value & 7;
-        sweepReload = true;
-    }
+  void writeSweep(uint8_t value) {
+    sweepEnabled = ((value >> 7) & 1) == 1;
+    sweepPeriod = ((value >> 4) & 7) + 1;
+    sweepNegate = ((value >> 3) & 1) == 1;
+    sweepShift = value & 7;
+    sweepReload = true;
+  }
 
-    void writeTimerLow(uint8_t value)
-    {
-        timerPeriod = (timerPeriod & 0xff00) | (uint16_t)value;
-    }
+  void writeTimerLow(uint8_t value) {
+    timerPeriod = (timerPeriod & 0xff00) | (uint16_t)value;
+  }
 
-    void writeTimerHigh(uint8_t value)
-    {
-        lengthValue = lengthTable[value >> 3];
-        timerPeriod = (timerPeriod & 0xff) | ((uint16_t)(value & 7) << 8);
-        envelopeStart = true;
-        dutyValue = 0;
-    }
+  void writeTimerHigh(uint8_t value) {
+    lengthValue = lengthTable[value >> 3];
+    timerPeriod = (timerPeriod & 0xff) | ((uint16_t)(value & 7) << 8);
+    envelopeStart = true;
+    dutyValue = 0;
+  }
 
-    void stepTimer()
-    {
-        if (timerValue == 0)
-        {
-            timerValue = timerPeriod;
-            dutyValue = (dutyValue + 1) % 8;
-        }
-        else
-        {
-            timerValue--;
-        }
+  void clock(int cycles) {
+    if (timerPeriod < 8)
+      return;
+    timerValue -= (uint16_t)cycles;
+    while ((int16_t)timerValue < 0) {
+      timerValue += (timerPeriod + 1);
+      dutyValue = (dutyValue + 1) % 8;
     }
+  }
 
-    void stepEnvelope()
-    {
-        if (envelopeStart)
-        {
-            envelopeVolume = 15;
-            envelopeValue = envelopePeriod;
-            envelopeStart = false;
-        }
-        else if (envelopeValue > 0)
-        {
-            envelopeValue--;
-        }
-        else
-        {
-            if (envelopeVolume > 0)
-            {
-                envelopeVolume--;
-            }
-            else if (envelopeLoop)
-            {
-                envelopeVolume = 15;
-            }
-            envelopeValue = envelopePeriod;
-        }
+  void stepTimer() {
+    if (timerValue == 0) {
+      timerValue = timerPeriod;
+      dutyValue = (dutyValue + 1) % 8;
+    } else {
+      timerValue--;
     }
+  }
 
-    void stepSweep()
-    {
-        if (sweepReload)
-        {
-            if (sweepEnabled && sweepValue == 0)
-            {
-                sweep();
-            }
-            sweepValue = sweepPeriod;
-            sweepReload = false;
-        }
-        else if (sweepValue > 0)
-        {
-            sweepValue--;
-        }
-        else
-        {
-            if (sweepEnabled)
-            {
-                sweep();
-            }
-            sweepValue = sweepPeriod;
-        }
+  void stepEnvelope() {
+    if (envelopeStart) {
+      envelopeVolume = 15;
+      envelopeValue = envelopePeriod;
+      envelopeStart = false;
+    } else if (envelopeValue > 0) {
+      envelopeValue--;
+    } else {
+      if (envelopeVolume > 0) {
+        envelopeVolume--;
+      } else if (envelopeLoop) {
+        envelopeVolume = 15;
+      }
+      envelopeValue = envelopePeriod;
     }
+  }
 
-    void stepLength()
-    {
-        if (lengthEnabled && lengthValue > 0)
-        {
-            lengthValue--;
-        }
+  void stepSweep() {
+    if (sweepReload) {
+      if (sweepEnabled && sweepValue == 0) {
+        sweep();
+      }
+      sweepValue = sweepPeriod;
+      sweepReload = false;
+    } else if (sweepValue > 0) {
+      sweepValue--;
+    } else {
+      if (sweepEnabled) {
+        sweep();
+      }
+      sweepValue = sweepPeriod;
     }
+  }
 
-    void sweep()
-    {
-        uint16_t delta = timerPeriod >> sweepShift;
-        if (sweepNegate)
-        {
-            timerPeriod -= delta;
-            if (channel == 1)
-            {
-                timerPeriod--;
-            }
-        }
-        else
-        {
-            timerPeriod += delta;
-        }
+  void stepLength() {
+    if (lengthEnabled && lengthValue > 0) {
+      lengthValue--;
     }
+  }
 
-    uint8_t output()
-    {
-        if (!enabled)
-        {
-            return 0;
-        }
-        if (lengthValue == 0)
-        {
-            return 0;
-        }
-        if (dutyTable[dutyMode][dutyValue] == 0)
-        {
-            return 0;
-        }
-        if (timerPeriod < 8 || timerPeriod > 0x7ff)
-        {
-            return 0;
-        }
-        if (envelopeEnabled)
-        {
-            return envelopeVolume;
-        }
-        else
-        {
-            return constantVolume;
-        }
+  void sweep() {
+    uint16_t delta = timerPeriod >> sweepShift;
+    if (sweepNegate) {
+      timerPeriod -= delta;
+      if (channel == 1) {
+        timerPeriod--;
+      }
+    } else {
+      timerPeriod += delta;
     }
+  }
+
+  uint8_t output() {
+    if (!enabled) {
+      return 0;
+    }
+    if (lengthValue == 0) {
+      return 0;
+    }
+    if (dutyTable[dutyMode][dutyValue] == 0) {
+      return 0;
+    }
+    if (timerPeriod < 8 || timerPeriod > 0x7ff) {
+      return 0;
+    }
+    if (envelopeEnabled) {
+      return envelopeVolume;
+    } else {
+      return constantVolume;
+    }
+  }
 
 private:
-    bool enabled;
-    uint8_t channel;
-    bool lengthEnabled;
-    uint8_t lengthValue;
-    uint16_t timerPeriod;
-    uint16_t timerValue;
-    uint8_t dutyMode;
-    uint8_t dutyValue;
-    bool sweepReload;
-    bool sweepEnabled;
-    bool sweepNegate;
-    uint8_t sweepShift;
-    uint8_t sweepPeriod;
-    uint8_t sweepValue;
-    bool envelopeEnabled;
-    bool envelopeLoop;
-    bool envelopeStart;
-    uint8_t envelopePeriod;
-    uint8_t envelopeValue;
-    uint8_t envelopeVolume;
-    uint8_t constantVolume;
+  bool enabled;
+  uint8_t channel;
+  bool lengthEnabled;
+  uint8_t lengthValue;
+  uint16_t timerPeriod;
+  uint16_t timerValue;
+  uint8_t dutyMode;
+  uint8_t dutyValue;
+  bool sweepReload;
+  bool sweepEnabled;
+  bool sweepNegate;
+  uint8_t sweepShift;
+  uint8_t sweepPeriod;
+  uint8_t sweepValue;
+  bool envelopeEnabled;
+  bool envelopeLoop;
+  bool envelopeStart;
+  uint8_t envelopePeriod;
+  uint8_t envelopeValue;
+  uint8_t envelopeVolume;
+  uint8_t constantVolume;
 };
 
 /**
  * Triangle waveform generator.
  */
-class Triangle
-{
-    friend class APU;
+class Triangle {
+  friend class APU;
+
 public:
-    Triangle()
-    {
-        enabled = false;
-        lengthEnabled = false;
-        lengthValue = 0;
-        timerPeriod = 0;
-        dutyValue = 0;
-        counterPeriod = 0;
-        counterValue = 0;
-        counterReload = false;
-    }
+  Triangle() {
+    enabled = false;
+    lengthEnabled = false;
+    lengthValue = 0;
+    timerPeriod = 0;
+    timerValue = 0;
+    dutyValue = 0;
+    counterPeriod = 0;
+    counterValue = 0;
+    counterReload = false;
+  }
 
-    void writeControl(uint8_t value)
-    {
-        lengthEnabled = ((value >> 7) & 1) == 0;
-        counterPeriod = value & 0x7f;
-    }
+  void writeControl(uint8_t value) {
+    lengthEnabled = ((value >> 7) & 1) == 0;
+    counterPeriod = value & 0x7f;
+  }
 
-    void writeTimerLow(uint8_t value)
-    {
-        timerPeriod = (timerPeriod & 0xff00) | (uint16_t)value;
-    }
+  void writeTimerLow(uint8_t value) {
+    timerPeriod = (timerPeriod & 0xff00) | (uint16_t)value;
+  }
 
-    void writeTimerHigh(uint8_t value)
-    {
-        lengthValue = lengthTable[value >> 3];
-        timerPeriod = (timerPeriod & 0x00ff) | ((uint16_t)(value & 7) << 8);
-        timerValue = timerPeriod;
-        counterReload = true;
-    }
+  void writeTimerHigh(uint8_t value) {
+    lengthValue = lengthTable[value >> 3];
+    timerPeriod = (timerPeriod & 0x00ff) | ((uint16_t)(value & 7) << 8);
+    timerValue = timerPeriod;
+    counterReload = true;
+  }
 
-    void stepTimer()
-    {
-        if (timerValue == 0)
-        {
-            timerValue = timerPeriod;
-            if (lengthValue > 0 && counterValue > 0)
-            {
-                dutyValue = (dutyValue + 1) % 32;
-            }
-        }
-        else
-        {
-            timerValue--;
-        }
+  void clock(int cycles) {
+    timerValue -= (uint16_t)cycles;
+    while ((int16_t)timerValue < 0) {
+      timerValue += (timerPeriod + 1);
+      if (lengthValue > 0 && counterValue > 0) {
+        dutyValue = (dutyValue + 1) % 32;
+      }
     }
+  }
 
-    void stepLength()
-    {
-        if (lengthEnabled && lengthValue > 0)
-        {
-            lengthValue--;
-        }
+  void stepTimer() {
+    if (timerValue == 0) {
+      timerValue = timerPeriod;
+      if (lengthValue > 0 && counterValue > 0) {
+        dutyValue = (dutyValue + 1) % 32;
+      }
+    } else {
+      timerValue--;
     }
+  }
 
-    void stepCounter()
-    {
-        if (counterReload)
-        {
-            counterValue = counterPeriod;
-        }
-        else if (counterValue > 0)
-        {
-            counterValue--;
-        }
-        if (lengthEnabled)
-        {
-            counterReload = false;
-        }
+  void stepLength() {
+    if (lengthEnabled && lengthValue > 0) {
+      lengthValue--;
     }
+  }
 
-    uint8_t output()
-    {
-        if (!enabled)
-        {
-            return 0;
-        }
-        if (lengthValue == 0)
-        {
-            return 0;
-        }
-        if (counterValue == 0)
-        {
-            return 0;
-        }
-        return triangleTable[dutyValue];
+  void stepCounter() {
+    if (counterReload) {
+      counterValue = counterPeriod;
+    } else if (counterValue > 0) {
+      counterValue--;
     }
+    if (lengthEnabled) {
+      counterReload = false;
+    }
+  }
+
+  uint8_t output() {
+    if (!enabled) {
+      return 0;
+    }
+    if (lengthValue == 0) {
+      return 0;
+    }
+    if (counterValue == 0) {
+      return 0;
+    }
+    return triangleTable[dutyValue];
+  }
 
 private:
-    bool enabled;
-    bool lengthEnabled;
-    uint8_t lengthValue;
-    uint16_t timerPeriod;
-    uint16_t timerValue;
-    uint8_t dutyValue;
-    uint8_t counterPeriod;
-    uint8_t counterValue;
-    bool counterReload;
+  bool enabled;
+  bool lengthEnabled;
+  uint8_t lengthValue;
+  uint16_t timerPeriod;
+  uint16_t timerValue;
+  uint8_t dutyValue;
+  uint8_t counterPeriod;
+  uint8_t counterValue;
+  bool counterReload;
 };
 
-class Noise
-{
-    friend class APU;
+class Noise {
+  friend class APU;
+
 public:
-    Noise()
-    {
-        enabled = false;
-        mode = false;
-        shiftRegister = 1;
-        lengthEnabled = false;
-        lengthValue = 0;
-        timerPeriod = 0;
-        timerValue = 0;
-        envelopeEnabled = false;
-        envelopeLoop = false;
-        envelopeStart = false;
-        envelopePeriod = 0;
-        envelopeValue = 0;
-        envelopeVolume = 0;
-        constantVolume = 0;
-    }
+  Noise() {
+    enabled = false;
+    mode = false;
+    shiftRegister = 1;
+    lengthEnabled = false;
+    lengthValue = 0;
+    timerPeriod = 0;
+    timerValue = 0;
+    envelopeEnabled = false;
+    envelopeLoop = false;
+    envelopeStart = false;
+    envelopePeriod = 0;
+    envelopeValue = 0;
+    envelopeVolume = 0;
+    constantVolume = 0;
+  }
 
-    void writeControl(uint8_t value)
-    {
-        lengthEnabled = ((value >> 5) & 1) == 0;
-        envelopeLoop = ((value >> 5) & 1) == 1;
-        envelopeEnabled = ((value >> 4) & 1) == 0;
-        envelopePeriod = value & 15;
-        constantVolume = value & 15;
-        envelopeStart = true;
-    }
+  void writeControl(uint8_t value) {
+    lengthEnabled = ((value >> 5) & 1) == 0;
+    envelopeLoop = ((value >> 5) & 1) == 1;
+    envelopeEnabled = ((value >> 4) & 1) == 0;
+    envelopePeriod = value & 15;
+    constantVolume = value & 15;
+    envelopeStart = true;
+  }
 
-    void writePeriod(uint8_t value)
-    {
-        mode = (value & 0x80) == 0x80;
-        timerPeriod = noiseTable[value & 0x0f];
-    }
+  void writePeriod(uint8_t value) {
+    mode = (value & 0x80) == 0x80;
+    timerPeriod = noiseTable[value & 0x0f];
+  }
 
-    void writeLength(uint8_t value)
-    {
-        lengthValue = lengthTable[value >> 3];
-        envelopeStart = true;
-    }
+  void writeLength(uint8_t value) {
+    lengthValue = lengthTable[value >> 3];
+    envelopeStart = true;
+  }
 
-    void stepTimer()
-    {
-        if (timerValue == 0)
-        {
-            timerValue = timerPeriod;
-            uint8_t shift;
-            if (mode)
-            {
-                shift = 6;
-            }
-            else
-            {
-                shift = 1;
-            }
-            uint16_t b1 = shiftRegister & 1;
-            uint16_t b2 = (shiftRegister >> shift) & 1;
-            shiftRegister >>= 1;
-            shiftRegister |= (b1 ^ b2) << 14;
-        }
-        else
-        {
-            timerValue--;
-        }
+  void clock(int cycles) {
+    timerValue -= (uint16_t)cycles;
+    while ((int16_t)timerValue < 0) {
+      timerValue += timerPeriod + 1;
+      uint8_t shift = mode ? 6 : 1;
+      uint16_t b1 = shiftRegister & 1;
+      uint16_t b2 = (shiftRegister >> shift) & 1;
+      shiftRegister >>= 1;
+      shiftRegister |= (b1 ^ b2) << 14;
     }
+  }
 
-    void stepEnvelope()
-    {
-        if (envelopeStart)
-        {
-            envelopeVolume = 15;
-            envelopeValue = envelopePeriod;
-            envelopeStart = false;
-        }
-        else if (envelopeValue > 0)
-        {
-            envelopeValue--;
-        }
-        else
-        {
-            if (envelopeVolume > 0)
-            {
-                envelopeVolume--;
-            }
-            else if (envelopeLoop)
-            {
-                envelopeVolume = 15;
-            }
-            envelopeValue = envelopePeriod;
-        }
+  void stepTimer() {
+    if (timerValue == 0) {
+      timerValue = timerPeriod;
+      uint8_t shift = mode ? 6 : 1;
+      uint16_t b1 = shiftRegister & 1;
+      uint16_t b2 = (shiftRegister >> shift) & 1;
+      shiftRegister >>= 1;
+      shiftRegister |= (b1 ^ b2) << 14;
+    } else {
+      timerValue--;
     }
+  }
 
-    void stepLength()
-    {
-        if (lengthEnabled && lengthValue > 0)
-        {
-            lengthValue--;
-        }
+  void stepEnvelope() {
+    if (envelopeStart) {
+      envelopeVolume = 15;
+      envelopeValue = envelopePeriod;
+      envelopeStart = false;
+    } else if (envelopeValue > 0) {
+      envelopeValue--;
+    } else {
+      if (envelopeVolume > 0) {
+        envelopeVolume--;
+      } else if (envelopeLoop) {
+        envelopeVolume = 15;
+      }
+      envelopeValue = envelopePeriod;
     }
+  }
 
-    uint8_t output()
-    {
-        if (!enabled)
-        {
-            return 0;
-        }
-        if (lengthValue == 0)
-        {
-            return 0;
-        }
-        if ((shiftRegister & 1) == 1)
-        {
-            return 0;
-        }
-        if (envelopeEnabled)
-        {
-            return envelopeVolume;
-        }
-        else
-        {
-            return constantVolume;
-        }
+  void stepLength() {
+    if (lengthEnabled && lengthValue > 0) {
+      lengthValue--;
     }
+  }
+
+  uint8_t output() {
+    if (!enabled) {
+      return 0;
+    }
+    if (lengthValue == 0) {
+      return 0;
+    }
+    if ((shiftRegister & 1) == 1) {
+      return 0;
+    }
+    if (envelopeEnabled) {
+      return envelopeVolume;
+    } else {
+      return constantVolume;
+    }
+  }
 
 private:
-    bool enabled;
-    bool mode;
-    uint16_t shiftRegister;
-    bool lengthEnabled;
-    uint8_t lengthValue;
-    uint16_t timerPeriod;
-    uint16_t timerValue;
-    bool envelopeEnabled;
-    bool envelopeLoop;
-    bool envelopeStart;
-    uint8_t envelopePeriod;
-    uint8_t envelopeValue;
-    uint8_t envelopeVolume;
-    uint8_t constantVolume;
+  bool enabled;
+  bool mode;
+  uint16_t shiftRegister;
+  bool lengthEnabled;
+  uint8_t lengthValue;
+  uint16_t timerPeriod;
+  uint16_t timerValue;
+  bool envelopeEnabled;
+  bool envelopeLoop;
+  bool envelopeStart;
+  uint8_t envelopePeriod;
+  uint8_t envelopeValue;
+  uint8_t envelopeVolume;
+  uint8_t constantVolume;
 };
 
-APU::APU()
-{
-    frameValue = 0;
-    audioBufferLength = 0;
+APU::APU() {
+  enabled = true;
+  frameValue = 0;
 
-    pulse1 = new Pulse(1);
-    pulse2 = new Pulse(2);
-    triangle = new Triangle;
-    noise = new Noise;
+  pulse1 = new Pulse(1);
+  pulse2 = new Pulse(2);
+  triangle = new Triangle;
+  noise = new Noise;
 }
 
-APU::~APU()
-{
-    delete pulse1;
-    delete pulse2;
-    delete triangle;
-    delete noise;
+APU::~APU() {
+  delete pulse1;
+  delete pulse2;
+  delete triangle;
+  delete noise;
 }
 
-float APU::getOutput()
-{
-    float p1 = pulse1->output();
-    float p2 = pulse2->output();
-    float pulseOut = 0.0f;
-    if (p1 + p2 > 0) {
-        pulseOut = 95.88f / ((8128.0f / (p1 + p2)) + 100.0f);
-    }
-
-    float t = triangle->output();
-    float n = noise->output();
-    float tndOut = 0.0f;
-    if (t / 8227.0f + n / 12241.0f > 0) {
-        tndOut = 159.79f / ((1.0f / (t / 8227.0f + n / 12241.0f)) + 100.0f);
-    }
-
-    return pulseOut + tndOut;
+float APU::getOutput() {
+  return mix(pulse1->output(), pulse2->output(), triangle->output(),
+             noise->output());
 }
 
-void APU::output(uint8_t* buffer, int len)
-{
-    int samplesReq = len / 2;
-    int16_t* out = (int16_t*)buffer;
-    int toCopy = (samplesReq > audioBufferLength) ? audioBufferLength : samplesReq;
-    
-    if (toCopy > 0)
-    {
-        memcpy(out, audioBuffer, toCopy * 2);
-        audioBufferLength -= toCopy;
-        if (audioBufferLength > 0)
-        {
-            memmove(audioBuffer, audioBuffer + toCopy, audioBufferLength * 2);
-        }
-    }
+float APU::mix(uint8_t p1, uint8_t p2, uint8_t t, uint8_t n) {
+  float pulseOut = 0.0f;
+  if (p1 + p2 > 0) {
+    pulseOut = 95.88f / ((8128.0f / (p1 + p2)) + 100.0f);
+  }
 
-    if (samplesReq > toCopy)
-    {
-        memset(out + toCopy, 0, (samplesReq - toCopy) * 2);
-    }
+  float tndOut = 0.0f;
+  if (t / 8227.0f + n / 12241.0f > 0) {
+    tndOut = 159.79f / ((1.0f / (t / 8227.0f + n / 12241.0f)) + 100.0f);
+  }
+
+  return pulseOut + tndOut;
 }
 
-void APU::stepFrame()
-{
+void APU::output(uint8_t *buffer, int len) {
+  int samplesReq = len / 2;
+  int16_t *out = (int16_t *)buffer;
+
+  SDL_LockAudio();
+  int toCopy =
+      (samplesReq > stateBufferLength) ? stateBufferLength : samplesReq;
+
+  for (int i = 0; i < toCopy; i++) {
+    SampleState &s = stateBuffer[i];
+    out[i] = static_cast<int16_t>(mix(s.p1, s.p2, s.t, s.n) * 35000.0f);
+  }
+
+  if (toCopy > 0) {
+    stateBufferLength -= toCopy;
+    if (stateBufferLength > 0) {
+      memmove(stateBuffer, stateBuffer + toCopy,
+              stateBufferLength * sizeof(SampleState));
+    }
+  }
+  SDL_UnlockAudio();
+
+  if (samplesReq > toCopy || !enabled) {
+    memset(out + toCopy, 0, (samplesReq - toCopy) * 2);
+  }
+}
+
+void APU::stepFrame() {
+  if (!enabled)
+    return;
+
+  const int cyclesPerFrame = 29780;
+  int frequency = Configuration::getAudioFrequency();
+  int totalSamples = frequency / Configuration::getFrameRate();
+  float cyclesPerSample = (float)cyclesPerFrame / totalSamples;
+
+  float currentCycles = 0;
+
+  for (int j = 0; j < totalSamples; j++) {
+    float nextCycles = currentCycles + cyclesPerSample;
+
+    auto crossed = [&](int threshold) {
+      return (currentCycles < threshold && nextCycles >= threshold);
+    };
+
+    if (crossed(7457) || crossed(22371)) {
+      stepEnvelope();
+    }
+    if (crossed(14913) || crossed(29828)) {
+      stepEnvelope();
+      stepSweep();
+      stepLength();
+    }
+
+    int cyclesToStep = (int)nextCycles - (int)currentCycles;
+
+    // Emulation: Step timers only
+    pulse1->clock(cyclesToStep / 2);
+    pulse2->clock(cyclesToStep / 2);
+    noise->clock(cyclesToStep / 2);
+    triangle->clock(cyclesToStep);
+
+    // Snapshot: Save state for audio thread - ONLY LOCK HERE
     SDL_LockAudio();
-    for (int i = 0; i < 4; i++)
-    {
-        frameValue = (frameValue + 1) % 5;
-        switch (frameValue)
-        {
-        case 1:
-        case 3:
-            stepEnvelope();
-            break;
-        case 0:
-        case 2:
-            stepEnvelope();
-            stepSweep();
-            stepLength();
-            break;
-        }
-
-        int frequency = Configuration::getAudioFrequency();
-        int samplesToWrite = frequency / (Configuration::getFrameRate() * 4);
-        if (i == 3)
-        {
-            samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
-        }
-        
-        int j = 0;
-        float apuSampleAcc = 0;
-        int apuSampleCount = 0;
-        for (int stepIndex = 0; stepIndex < 3729; stepIndex++)
-        {
-            apuSampleAcc += getOutput();
-            apuSampleCount++;
-
-            if (j < samplesToWrite &&
-                (stepIndex / 3729.0) > (j / (double)samplesToWrite))
-            {
-                float avg = apuSampleAcc / apuSampleCount;
-                int16_t sample = static_cast<int16_t>((avg - 0.2f) * 30000.0f);
-                audioBuffer[audioBufferLength + j] = sample;
-                j++;
-                apuSampleAcc = 0;
-                apuSampleCount = 0;
-            }
-
-            pulse1->stepTimer();
-            pulse2->stepTimer();
-            noise->stepTimer();
-            triangle->stepTimer();
-            triangle->stepTimer();
-        }
-        audioBufferLength += samplesToWrite;
+    if (stateBufferLength < AUDIO_BUFFER_LENGTH) {
+      stateBuffer[stateBufferLength] = {pulse1->output(), pulse2->output(),
+                                        triangle->output(), noise->output()};
+      stateBufferLength++;
     }
     SDL_UnlockAudio();
+
+    currentCycles = nextCycles;
+  }
 }
 
-void APU::stepEnvelope()
-{
-    pulse1->stepEnvelope();
-    pulse2->stepEnvelope();
-    triangle->stepCounter();
-    noise->stepEnvelope();
+void APU::stepEnvelope() {
+  pulse1->stepEnvelope();
+  pulse2->stepEnvelope();
+  triangle->stepCounter();
+  noise->stepEnvelope();
 }
 
-void APU::stepSweep()
-{
-    pulse1->stepSweep();
-    pulse2->stepSweep();
+void APU::stepSweep() {
+  pulse1->stepSweep();
+  pulse2->stepSweep();
 }
 
-void APU::stepLength()
-{
-    pulse1->stepLength();
-    pulse2->stepLength();
-    triangle->stepLength();
-    noise->stepLength();
+void APU::stepLength() {
+  pulse1->stepLength();
+  pulse2->stepLength();
+  triangle->stepLength();
+  noise->stepLength();
 }
 
-void APU::writeControl(uint8_t value)
-{
-    pulse1->enabled = (value & 1) == 1;
-    pulse2->enabled = (value & 2) == 2;
-    triangle->enabled = (value & 4) == 4;
-    noise->enabled = (value & 8) == 8;
-    if (!pulse1->enabled)
-    {
-        pulse1->lengthValue = 0;
-    }
-    if (!pulse2->enabled)
-    {
-        pulse2->lengthValue = 0;
-    }
-    if (!triangle->enabled)
-    {
-        triangle->lengthValue = 0;
-    }
-    if (!noise->enabled)
-    {
-        noise->lengthValue = 0;
-    }
+void APU::writeControl(uint8_t value) {
+  pulse1->enabled = (value & 1) == 1;
+  pulse2->enabled = (value & 2) == 2;
+  triangle->enabled = (value & 4) == 4;
+  noise->enabled = (value & 8) == 8;
+  if (!pulse1->enabled) {
+    pulse1->lengthValue = 0;
+  }
+  if (!pulse2->enabled) {
+    pulse2->lengthValue = 0;
+  }
+  if (!triangle->enabled) {
+    triangle->lengthValue = 0;
+  }
+  if (!noise->enabled) {
+    noise->lengthValue = 0;
+  }
 }
 
-void APU::writeRegister(uint16_t address, uint8_t value)
-{
-    switch (address)
-    {
-    case 0x4000:
-        pulse1->writeControl(value);
-        break;
-    case 0x4001:
-        pulse1->writeSweep(value);
-        break;
-    case 0x4002:
-        pulse1->writeTimerLow(value);
-        break;
-    case 0x4003:
-        pulse1->writeTimerHigh(value);
-        break;
-    case 0x4004:
-        pulse2->writeControl(value);
-        break;
-    case 0x4005:
-        pulse2->writeSweep(value);
-        break;
-    case 0x4006:
-        pulse2->writeTimerLow(value);
-        break;
-    case 0x4007:
-        pulse2->writeTimerHigh(value);
-        break;
-    case 0x4008:
-        triangle->writeControl(value);
-        break;
-    case 0x400a:
-        triangle->writeTimerLow(value);
-        break;
-    case 0x400b:
-        triangle->writeTimerHigh(value);
-        break;
-    case 0x400c:
-        noise->writeControl(value);
-        break;
-    case 0x400d:
-    case 0x400e:
-        noise->writePeriod(value);
-        break;
-    case 0x400f:
-        noise->writeLength(value);
-        break;
-    case 0x4015:
-        writeControl(value);
-        break;
-    case 0x4017:
-        stepEnvelope();
-        stepSweep();
-        stepLength();
-    default:
-        break;
-    }
+void APU::writeRegister(uint16_t address, uint8_t value) {
+  switch (address) {
+  case 0x4000:
+    pulse1->writeControl(value);
+    break;
+  case 0x4001:
+    pulse1->writeSweep(value);
+    break;
+  case 0x4002:
+    pulse1->writeTimerLow(value);
+    break;
+  case 0x4003:
+    pulse1->writeTimerHigh(value);
+    break;
+  case 0x4004:
+    pulse2->writeControl(value);
+    break;
+  case 0x4005:
+    pulse2->writeSweep(value);
+    break;
+  case 0x4006:
+    pulse2->writeTimerLow(value);
+    break;
+  case 0x4007:
+    pulse2->writeTimerHigh(value);
+    break;
+  case 0x4008:
+    triangle->writeControl(value);
+    break;
+  case 0x400a:
+    triangle->writeTimerLow(value);
+    break;
+  case 0x400b:
+    triangle->writeTimerHigh(value);
+    break;
+  case 0x400c:
+    noise->writeControl(value);
+    break;
+  case 0x400d:
+  case 0x400e:
+    noise->writePeriod(value);
+    break;
+  case 0x400f:
+    noise->writeLength(value);
+    break;
+  case 0x4015:
+    writeControl(value);
+    break;
+  case 0x4017:
+    stepEnvelope();
+    stepSweep();
+    stepLength();
+  default:
+    break;
+  }
 }

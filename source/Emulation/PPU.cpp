@@ -86,6 +86,7 @@ const uint32_t* paletteRGB = defaultPaletteRGB;
 PPU::PPU(SMBEngine& engine) :
     engine(engine)
 {
+    debugRenderMode = 0;
     currentAddress = 0;
     writeToggle = false;
 }
@@ -232,7 +233,7 @@ void PPU::render(uint32_t* buffer)
     }
 
     // Draw sprites behind the backround
-    if (ppuMask & (1 << 4)) // Are sprites enabled?
+    if ((ppuMask & (1 << 4)) && (debugRenderMode == 0 || debugRenderMode == 2)) // Are sprites enabled?
     {
         // Sprites with the lowest index in OAM take priority.
         // Therefore, render the array of sprites in reverse order.
@@ -308,7 +309,7 @@ void PPU::render(uint32_t* buffer)
     }
 
     // Draw the background (nametable)
-    if (ppuMask & (1 << 3)) // Is the background enabled?
+    if ((ppuMask & (1 << 3)) && (debugRenderMode == 0 || debugRenderMode == 1)) // Is the background enabled?
     {
         int scrollX = (int)ppuScrollX + ((ppuCtrl & (1 << 0)) ? 256 : 0);
         int xMin = scrollX / 8;
@@ -347,7 +348,7 @@ void PPU::render(uint32_t* buffer)
     }
 
     // Draw sprites in front of the background
-    if (ppuMask & (1 << 4))
+    if ((ppuMask & (1 << 4)) && (debugRenderMode == 0 || debugRenderMode == 2))
     {
         // Sprites with the lowest index in OAM take priority.
         // Therefore, render the array of sprites in reverse order.
@@ -471,13 +472,14 @@ void PPU::writeByte(uint16_t address, uint8_t value)
     }
     else if (address < 0x3f20)
     {
-        // Palette data
-        palette[address - 0x3f00] = value;
+        // Palette data (mask to 6 bits to prevent RGB table OOB)
+        uint8_t maskedValue = value & 0x3f;
+        palette[address - 0x3f00] = maskedValue;
 
         // Mirroring
         if (address == 0x3f10 || address == 0x3f14 || address == 0x3f18 || address == 0x3f1c)
         {
-            palette[address - 0x3f10] = value;
+            palette[address - 0x3f10] = maskedValue;
         }
     }
 }

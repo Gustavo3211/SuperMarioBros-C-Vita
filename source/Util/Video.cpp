@@ -1,4 +1,6 @@
-#include <iostream>
+#include <string>
+#include <cstdio>
+#include <SDL2/SDL.h>
 
 #include "../Constants.hpp"
 
@@ -213,14 +215,12 @@ const uint32_t* loadPalette(const std::string& fileName)
         else
         {
             delete [] fileBuffer;
-            std::cout << "Unsupported palette file \"" << fileName << "\"" << std::endl;
         }
 
         fclose(file);
     }
     else
     {
-        std::cout << "Unable to open palette file \"" << fileName << "\"" << std::endl;
     }
 
     return palette;

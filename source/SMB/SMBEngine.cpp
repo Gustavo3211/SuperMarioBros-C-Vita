@@ -28,7 +28,7 @@ SMBEngine::SMBEngine(uint8_t* romImage) :
     // CHR Location in ROM: Header (16 bytes) + 2 PRG pages (16k each)
     chr = (romImage + 16 + (16384 * 2));
 
-    returnIndexStackTop = 0;
+    returnIndexStackTop = -1;
 }
 
 SMBEngine::~SMBEngine()
@@ -70,11 +70,30 @@ void SMBEngine::update()
     // Run the decompiled code for the NMI handler
     code(1);
 
-    // Update the APU
     if (Configuration::getAudioEnabled())
     {
         apu->stepFrame();
     }
+}
+
+void SMBEngine::setAudioEnabled(bool enabled)
+{
+    apu->setEnabled(enabled);
+}
+
+bool SMBEngine::isAudioEnabled() const
+{
+    return apu->isEnabled();
+}
+
+void SMBEngine::setRenderMode(int mode)
+{
+    ppu->setDebugRenderMode(mode);
+}
+
+int SMBEngine::getRenderMode() const
+{
+    return ppu->getDebugRenderMode();
 }
 
 //---------------------------------------------------------------------
@@ -147,12 +166,19 @@ void SMBEngine::pla()
 
 int SMBEngine::popReturnIndex()
 {
-    return returnIndexStack[returnIndexStackTop--];
+    if (returnIndexStackTop >= 0)
+    {
+        return returnIndexStack[returnIndexStackTop--];
+    }
+    return 0;
 }
 
 void SMBEngine::pushReturnIndex(int index)
 {
-    returnIndexStack[++returnIndexStackTop] = index;
+    if (returnIndexStackTop < 1023)
+    {
+        returnIndexStack[++returnIndexStackTop] = index;
+    }
 }
 
 uint8_t SMBEngine::readData(uint16_t address)

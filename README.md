@@ -9,7 +9,7 @@ Many thanks to doppelganger (doppelheathen@gmail.com), who wrote the original co
 
 ![Demo](https://github.com/Gustavo3211/SuperMarioBros-C-Vita/blob/master/VITA3K.png)
 
-*looks and plays just like the original (super low peformance in PSVITA but runs fine on VIta3k and i reaally dont know why!!!! :D)*
+# Runs smoothly on PS Vita thanks to decoupled APU rendering. Audio is currently experimental and disabled by default to maintain peak performance.*
 
 # Super Mario Bros. C (PS Vita Port)
 
@@ -36,11 +36,12 @@ The resulting `smbc.vpk` will be in the `build` directory.
 ## Controls
 
 - **D-Pad / Left Analog:** Move
-- **Cross / Circle / L:** Jump
-- **Square / R:** Run
+- **Cross / Circle / L-Shoulder:** Jump
+- **Square / R-Shoulder:** Run
 - **Start:** Start
 - **Select:** Select
-- Default: ""
+
+*Note: If `debug_mode` is enabled in `config.ini`, L/R will toggle audio and render modes instead.*
 
 
 

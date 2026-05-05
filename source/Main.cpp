@@ -8,6 +8,14 @@
 #include "Util/Video.hpp"
 
 #include "Configuration.hpp"
+#include <psp2/power.h>
+#include <psp2/kernel/processmgr.h>
+
+// Vita-specific stack and heap configuration
+extern "C" {
+    unsigned int sceUserMainThreadStackSize = 2 * 1024 * 1024;
+    unsigned int sceLibcHeapSize = 16 * 1024 * 1024;
+}
 #include "Constants.hpp"
 
 uint8_t* romImage;
@@ -18,6 +26,16 @@ static SDL_Texture* scanlineTexture;
 static SMBEngine* smbEngine = nullptr;
 static uint32_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
 static SDL_GameController* controller = nullptr;
+
+static bool prevL = false;
+static bool prevR = false;
+static int debugRenderMode = 0;
+static bool audioActive = false;
+static const char* renderModeNames[] = { "RENDER: BOTH", "RENDER: BG", "RENDER: SPRITES", "RENDER: NONE" };
+
+static uint32_t frameCount = 0;
+static uint32_t lastFpsTime = 0;
+static float currentFps = 0.0f;
 
 /**
  * Load the Super Mario Bros. ROM image.
@@ -63,9 +81,12 @@ static void audioCallback(void* userdata, uint8_t* buffer, int len)
 static bool initialize()
 {
     // Initialize SDL first to use message box if needed
+    // Silence SDL logs
+    SDL_LogSetAllPriority(SDL_LOG_PRIORITY_CRITICAL);
+
+    // Initialize SDL first to use message box if needed
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0)
     {
-        std::cout << "SDL_Init() failed: " << SDL_GetError() << std::endl;
         return false;
     }
 
@@ -129,7 +150,7 @@ static bool initialize()
 
         SDL_AudioSpec obtainedSpec;
         if (SDL_OpenAudio(&desiredSpec, &obtainedSpec) < 0) {
-             std::cout << "SDL_OpenAudio failed: " << SDL_GetError() << std::endl;
+             // Silenced error
         }
         SDL_PauseAudio(0);
     }
@@ -170,10 +191,20 @@ static void mainLoop()
     SMBEngine engine(romImage);
     smbEngine = &engine;
     engine.reset();
+    engine.setAudioEnabled(audioActive);
 
     bool running = true;
+    lastFpsTime = SDL_GetTicks();
     while (running)
     {
+        uint32_t currentTime = SDL_GetTicks();
+        frameCount++;
+        if (currentTime - lastFpsTime >= 1000) {
+            currentFps = frameCount * 1000.0f / (currentTime - lastFpsTime);
+            lastFpsTime = currentTime;
+            frameCount = 0;
+        }
+
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
@@ -184,11 +215,30 @@ static void mainLoop()
         
         if (controller) {
             bool jump = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_A) || // Vita Cross
-                        SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_B) || // Vita Circle
-                        SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
-            bool run  = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_X) || // Vita Square
-                        SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+                        SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_B);   // Vita Circle
+            bool run  = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_X);    // Vita Square
             
+            bool currL = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
+            bool currR = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+
+            if (Configuration::getDebugMode()) {
+                if (currL && !prevL) {
+                    audioActive = !audioActive;
+                    engine.setAudioEnabled(audioActive);
+                }
+                if (currR && !prevR) {
+                    debugRenderMode = (debugRenderMode + 1) % 4;
+                    engine.setRenderMode(debugRenderMode);
+                }
+            } else {
+                // In non-debug mode, L is Jump and R is Run
+                if (currL) jump = true;
+                if (currR) run = true;
+            }
+            
+            prevL = currL;
+            prevR = currR;
+
             controller1.setButtonState(BUTTON_A, jump);
             controller1.setButtonState(BUTTON_B, run);
             controller1.setButtonState(BUTTON_SELECT, SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_BACK));
@@ -219,6 +269,19 @@ static void mainLoop()
 
         engine.update();
         engine.render(renderBuffer);
+
+        if (Configuration::getDebugMode()) {
+            // Draw debug status text
+            drawText(renderBuffer, 8, 8, renderModeNames[debugRenderMode]);
+            if (!audioActive) {
+                drawText(renderBuffer, 8, 16, "AUDIO: OFF");
+            }
+            
+            // Draw FPS
+            char fpsText[16];
+            snprintf(fpsText, sizeof(fpsText), "FPS: %.1f", currentFps);
+            drawText(renderBuffer, 180, 8, fpsText);
+        }
 
         SDL_UpdateTexture(texture, NULL, renderBuffer, sizeof(uint32_t) * RENDER_WIDTH);
 

@@ -15,14 +15,15 @@ std::list<ConfigurationOption*> Configuration::configurationOptions = {
     &Configuration::renderScale,
     &Configuration::romFileName,
     &Configuration::scanlinesEnabled,
-    &Configuration::vsyncEnabled
+    &Configuration::vsyncEnabled,
+    &Configuration::debugMode
 };
 
 /**
  * Whether audio is enabled or not.
  */
 BasicConfigurationOption<bool> Configuration::audioEnabled(
-    "audio.enabled", true
+    "audio - experimental - will cause issues.enabled", false
 );
 
 /**
@@ -74,6 +75,13 @@ BasicConfigurationOption<bool> Configuration::vsyncEnabled(
     "video.vsync", true
 );
 
+/**
+ * Whether debug mode is enabled or not.
+ */
+BasicConfigurationOption<bool> Configuration::debugMode(
+    "game.debug_mode", false
+);
+
 ConfigurationOption::ConfigurationOption(
     const std::string& path) :
     path(path)
@@ -98,6 +106,25 @@ static inline std::string trim(std::string s) {
 void Configuration::initialize(const std::string& fileName)
 {
     std::ifstream configFile(fileName.c_str());
+
+    if (!configFile.good())
+    {
+        // Generate default config file if it doesn't exist
+        std::ofstream newConfigFile(fileName.c_str());
+        if (newConfigFile.good())
+        {
+            newConfigFile << "[audio - experimental - will cause issues]" << std::endl;
+            newConfigFile << "enabled = 0" << std::endl;
+            newConfigFile << std::endl;
+            newConfigFile << "[game]" << std::endl;
+            newConfigFile << "rom_file = ux0:data/SMB/game.nes" << std::endl;
+            newConfigFile << "debug_mode = 0" << std::endl;
+            newConfigFile.close();
+        }
+        
+        // Re-open to read defaults
+        configFile.open(fileName.c_str());
+    }
 
     if (configFile.good())
     {
@@ -164,4 +191,9 @@ bool Configuration::getScanlinesEnabled()
 bool Configuration::getVsyncEnabled()
 {
     return vsyncEnabled.getValue();
+}
+
+bool Configuration::getDebugMode()
+{
+    return debugMode.getValue();
 }

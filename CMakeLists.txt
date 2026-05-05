@@ -22,7 +22,7 @@ set(SOURCE_FILES
 find_package(SDL2 REQUIRED)
 
 add_executable(smbc ${SOURCE_FILES})
-target_link_libraries(smbc ${SDL2_LIBRARIES})
+target_link_libraries(smbc ${SDL2_LIBRARIES} ScePower_stub SceLibKernel_stub)
 # add_dependencies(smbc codegen)
 
 if(DEFINED ENV{VITASDK})

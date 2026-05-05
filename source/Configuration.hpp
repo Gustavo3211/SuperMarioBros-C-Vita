@@ -90,7 +90,6 @@ public:
         if (it != settings.end())
         {
             convertConfigValue<T>(it->second, value);
-            std::cout << "Configuration option \"" << getPath() << "\" set to \"" << value << "\"" << std::endl;
         }
     }
 
@@ -150,6 +149,11 @@ public:
      */
     static bool getVsyncEnabled();
 
+    /**
+     * Get whether debug mode is enabled or not.
+     */
+    static bool getDebugMode();
+
 private:
     static BasicConfigurationOption<bool> audioEnabled;
     static BasicConfigurationOption<int> audioFrequency;
@@ -159,6 +163,7 @@ private:
     static BasicConfigurationOption<std::string> romFileName;
     static BasicConfigurationOption<bool> scanlinesEnabled;
     static BasicConfigurationOption<bool> vsyncEnabled;
+    static BasicConfigurationOption<bool> debugMode;
 
     static std::list<ConfigurationOption*> configurationOptions;
 };

@@ -24,8 +24,12 @@ public:
 
     void writeRegister(uint16_t address, uint8_t value);
 
+    void setDebugRenderMode(int mode) { debugRenderMode = mode; }
+    int getDebugRenderMode() const { return debugRenderMode; }
+
 private:
     SMBEngine& engine;
+    int debugRenderMode;
 
     uint8_t ppuCtrl; /**< $2000 */
     uint8_t ppuMask; /**< $2001 */
